@@ -1334,38 +1334,48 @@ elif step==5:
 
             # 2D cluster scatter
             with st.expander(f"🗺 Cluster Map — {best_cr['Model']}",expanded=True):
-                Xall=scaler.transform(df_proc[[c for c in df_proc.columns if c!=target]].values)
-                n_vis=min(2,Xall.shape[1],Xall.shape[0])
-                pca_vis=PCA(n_components=n_vis); X2d=pca_vis.fit_transform(Xall)
-                lbl=best_cr['_labels']
-                fig_cs,ax_cs=make_fig(8,5.8)
-                for ci in sorted(set(lbl)):
-                    mask=lbl==ci; col=PAL[ci%len(PAL)] if ci>=0 else '#2a3550'; cnt=int(mask.sum())
-                    glow_scatter(ax_cs,X2d[mask,0],X2d[mask,1],color=col,s=16,
-                                 label=f'{"Noise" if ci==-1 else f"Cluster {ci}"} (n={cnt})')
-                    # Cluster centroid marker
-                    if ci>=0 and mask.sum()>0:
-                        cx,cy=X2d[mask,0].mean(),X2d[mask,1].mean()
-                        ax_cs.scatter([cx],[cy],color='white',s=90,zorder=10,
-                                      edgecolors=col,linewidths=2.5,marker='D')
-                        ax_cs.text(cx,cy,str(ci),ha='center',va='center',
-                                   fontsize=7,color=col,fontweight='bold',zorder=11)
-                polish(ax_cs,xlabel='PCA 1',ylabel='PCA 2',
-                       title=f'{best_cr["Model"]} — Silhouette: {best_cr["Silhouette"]:.4f}',legend=True)
-                plt.tight_layout(); st.pyplot(fig_cs); plt.close()
+                # Use pre-computed 2D projection from DR results (computed during training)
+                pca_dr_res=[r for r in dr_res if r.get('Method')=='PCA' and '_X2d' in r]
+                if pca_dr_res:
+                    X2d=pca_dr_res[0]['_X2d']
+                    lbl=best_cr['_labels']
+                    if lbl is not None and len(lbl)==len(X2d):
+                        fig_cs,ax_cs=make_fig(8,5.8)
+                        for ci in sorted(set(lbl)):
+                            mask=lbl==ci; col=PAL[ci%len(PAL)] if ci>=0 else '#2a3550'; cnt=int(mask.sum())
+                            glow_scatter(ax_cs,X2d[mask,0],X2d[mask,1],color=col,s=16,
+                                         label=f'{"Noise" if ci==-1 else f"Cluster {ci}"} (n={cnt})')
+                            if ci>=0 and mask.sum()>0:
+                                cx,cy=X2d[mask,0].mean(),X2d[mask,1].mean()
+                                ax_cs.scatter([cx],[cy],color='white',s=90,zorder=10,
+                                              edgecolors=col,linewidths=2.5,marker='D')
+                                ax_cs.text(cx,cy,str(ci),ha='center',va='center',
+                                           fontsize=7,color=col,fontweight='bold',zorder=11)
+                        polish(ax_cs,xlabel='PCA 1',ylabel='PCA 2',
+                               title=f'{best_cr["Model"]} — Silhouette: {best_cr["Silhouette"]:.4f}',legend=True)
+                        plt.tight_layout(); st.pyplot(fig_cs); plt.close()
+                    else:
+                        st.info("Cluster map unavailable — label/data size mismatch.")
+                else:
+                    st.info("Cluster map unavailable — PCA projection not found.")
 
             # Elbow chart
             with st.expander("📐 K-Means Elbow Chart"):
-                Xa2=scaler.transform(df_proc[[c for c in df_proc.columns if c!=target]].values)
-                inertias=[]; ks=range(2,min(11,len(Xa2)//5+2))
-                for k in ks: km=KMeans(n_clusters=k,random_state=42,n_init=10); km.fit(Xa2); inertias.append(km.inertia_)
-                fig_el,ax_el=make_fig(8,3.5)
-                ax_el.plot(list(ks),inertias,color=C1,marker='o',markersize=7,lw=2.2,zorder=3)
-                ax_el.fill_between(list(ks),inertias,alpha=.1,color=C1)
-                for k,v in zip(ks,inertias):
-                    ax_el.text(k,v+max(inertias)*.015,f'{v:,.0f}',ha='center',va='bottom',color='#6b7280',fontsize=7)
-                polish(ax_el,xlabel='K (number of clusters)',ylabel='Inertia',title='Elbow Chart — Choose Optimal K')
-                plt.tight_layout(); st.pyplot(fig_el); plt.close()
+                # Use scaled test set as proxy for elbow chart
+                Xa2=X_test_sc if X_test_sc is not None else X_test
+                if Xa2 is not None and len(Xa2)>=4:
+                    inertias=[]; ks=range(2,min(11,len(Xa2)//2+2))
+                    for k in ks:
+                        km=KMeans(n_clusters=k,random_state=42,n_init=5); km.fit(Xa2); inertias.append(km.inertia_)
+                    fig_el,ax_el=make_fig(8,3.5)
+                    glow_line(ax_el,list(ks),inertias,color=C1,lw=2.2)
+                    ax_el.fill_between(list(ks),inertias,alpha=.1,color=C1)
+                    for k,v in zip(ks,inertias):
+                        ax_el.text(k,v+max(inertias)*.015,f'{v:,.0f}',ha='center',va='bottom',color='#6b7280',fontsize=7)
+                    polish(ax_el,xlabel='K (number of clusters)',ylabel='Inertia',title='Elbow Chart — Choose Optimal K')
+                    plt.tight_layout(); st.pyplot(fig_el); plt.close()
+                else:
+                    st.info("Elbow chart unavailable.")
 
     # ── Dimensionality reduction ──────────────────────────────────────────
     if dr_res:
@@ -1444,11 +1454,13 @@ elif step==5:
 elif step==6:
     plt.close('all')
     feat_cols=st.session_state.feat_cols; problem_type=st.session_state.problem_type
-    df_proc=st.session_state.df_proc; target=st.session_state.target
+    target=st.session_state.target
     st.markdown('<div class="card fadein"><div class="ctitle">⬡ Step 7 — Neural Network Architecture Visualizer</div>',unsafe_allow_html=True)
 
     n_features=len(feat_cols)
-    n_classes=len(df_proc[target].unique()) if target and problem_type=='classification' else 1
+    # Get n_classes from le_target (stored in session) instead of df_proc
+    le_t=st.session_state.le_target
+    n_classes=len(le_t.classes_) if (le_t is not None and problem_type=='classification') else 1
 
     c1,c2,c3=st.columns(3)
     with c1:
