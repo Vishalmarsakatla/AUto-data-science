@@ -507,7 +507,7 @@ elif step==1:
             for pc in parts['bodies']: pc.set_facecolor(C2); pc.set_alpha(.35); pc.set_edgecolor(C2)
             parts['cbars'].set_color(GRID); parts['cmaxes'].set_color(GRID); parts['cmins'].set_color(GRID)
             bp=ax.boxplot(data,positions=[0],patch_artist=True,
-                boxprops=dict(facecolor='rgba(0,229,160,.12)',color=C1),
+                boxprops=dict(facecolor=(0,229/255,160/255,.12),color=C1),
                 medianprops=dict(color=C1,linewidth=2.5),
                 whiskerprops=dict(color='#374151',lw=1.2),capprops=dict(color='#374151',lw=1.2),
                 flierprops=dict(marker='o',markerfacecolor=C5,markersize=3.5,alpha=.7,markeredgewidth=0))
@@ -657,7 +657,7 @@ elif step==2:
                 pc.set_facecolor(color); pc.set_alpha(.25); pc.set_edgecolor(color); pc.set_linewidth(1.2)
             for k in ['cbars','cmaxes','cmins']: parts[k].set_color(GRID)
             ax3.boxplot(data,positions=[0],patch_artist=True,widths=0.13,
-                boxprops=dict(facecolor='rgba(255,255,255,.08)',color=color,linewidth=1.5),
+                boxprops=dict(facecolor=(1,1,1,.08),color=color,linewidth=1.5),
                 medianprops=dict(color='white',lw=2.5),whiskerprops=dict(color='#374151',lw=1),
                 capprops=dict(color='#374151',lw=1),showfliers=False)
             # Mean dot with glow
@@ -827,7 +827,7 @@ elif step==3:
     for i,(x,s) in enumerate(zip(xs,steps_done)):
         col=C1 if i<4 else C5 if 'dropped' in s else C3
         ax_pp.add_patch(FancyBboxPatch((x-.09,.2),.18,.6,boxstyle="round,pad=0.02",
-                                       facecolor=f'rgba(0,229,160,.08)',edgecolor=col,lw=1.2))
+                                       facecolor=(0,229/255,160/255,.08),edgecolor=col,lw=1.2))
         ax_pp.text(x,.5,s,ha='center',va='center',fontsize=7,color='#d4d8f0',fontweight='500',wrap=True)
         if i<n-1: ax_pp.annotate('',xy=(xs[i+1]-.09,.5),xytext=(x+.09,.5),
             arrowprops=dict(arrowstyle='->',color='#374151',lw=1.2))
@@ -1457,7 +1457,7 @@ elif step==6:
 
         # Layer background panel
         ax_nn.add_patch(FancyBboxPatch((xp-.055,.1),.11,.82,
-            boxstyle="round,pad=0.01",facecolor=f'rgba({int(col[1:3],16)},{int(col[3:5],16)},{int(col[5:7],16)},0.05)',
+            boxstyle="round,pad=0.01",facecolor=(*[c/255 for c in bytes.fromhex(col[1:])],0.05),
             edgecolor=col,lw=.8,alpha=.5))
 
         # Connections first (behind nodes)
@@ -1488,10 +1488,10 @@ elif step==6:
         # Batch norm + dropout annotations
         if not is_in and not is_out and batch_norm:
             ax_nn.text(xp,.94,'BN',ha='center',va='center',fontsize=5.5,color='#fbbf24',
-                       bbox=dict(boxstyle='round,pad=0.15',facecolor='rgba(245,158,11,.15)',edgecolor='rgba(245,158,11,.4)',lw=.8))
+                       bbox=dict(boxstyle='round,pad=0.15',facecolor=(245/255,158/255,11/255,.15),edgecolor=(245/255,158/255,11/255,.4),lw=.8))
         if not is_in and not is_out and dropout>0:
             ax_nn.text(xp,.88,f'D{dropout}',ha='center',va='center',fontsize=5.5,color='#f87171',
-                       bbox=dict(boxstyle='round,pad=0.15',facecolor='rgba(239,68,68,.1)',edgecolor='rgba(239,68,68,.35)',lw=.8))
+                       bbox=dict(boxstyle='round,pad=0.15',facecolor=(239/255,68/255,68/255,.1),edgecolor=(239/255,68/255,68/255,.35),lw=.8))
 
     ax_nn.set_xlim(0,1); ax_nn.set_ylim(0,1)
     arch_str=' → '.join([str(x) for x in all_layers])
