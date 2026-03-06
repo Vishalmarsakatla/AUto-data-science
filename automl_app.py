@@ -827,7 +827,7 @@ elif step==5:
                 for ci in sorted(set(lbl)):
                     mask=lbl==ci; col=sc_cols[ci%len(sc_cols)] if ci>=0 else '#374151'
                     cnt=mask.sum()
-                    ax.scatter(X2d[mask,0],X2d[mask,1],c=col,s=15,alpha=.7,
+                    ax.scatter(X2d[mask,0],X2d[mask,1],color=col,s=15,alpha=.7,
                                label=f'{"Noise" if ci==-1 else f"C{ci}"} (n={cnt})')
                 ax.legend(fontsize=7,labelcolor='#9ca3af',facecolor='#0d1117',edgecolor='#1f2937')
                 style_ax(ax); plt.tight_layout(); st.pyplot(fig); plt.close()
