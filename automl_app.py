@@ -1147,8 +1147,10 @@ elif step==5:
                 err_mag=np.abs(y_test-yp)
                 sc=ax_s.scatter(y_test,yp,c=err_mag,cmap='RdYlGn_r',
                                 s=20,alpha=.7,zorder=3,edgecolors='none')
-                plt.colorbar(sc,ax=ax_s,label='|Error|',shrink=.85,
-                             labelcolor='#6b7280')
+                cb=plt.colorbar(sc,ax=ax_s,shrink=.85)
+                cb.set_label('|Error|',color='#6b7280',fontsize=8)
+                cb.ax.yaxis.set_tick_params(color='#4b5563')
+                plt.setp(cb.ax.yaxis.get_ticklabels(),color='#6b7280',fontsize=7)
                 glow_line(ax_s,[mn2,mx2],[mn2,mx2],color='#fbbf24',lw=1.8,label='Perfect fit')
                 # ±10% band
                 ax_s.fill_between([mn2,mx2],[mn2*.9,mx2*.9],[mn2*1.1,mx2*1.1],
