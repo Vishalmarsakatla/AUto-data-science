@@ -6,8 +6,12 @@ seaborn
 scikit-learn
 joblib
 xgboost
+lightgbm
+catboost
 scipy
 nltk
 shap
 reportlab
 wordcloud
+statsmodels
+requests
