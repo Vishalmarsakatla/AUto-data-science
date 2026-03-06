@@ -6,9 +6,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import matplotlib.colors as mcolors
-import matplotlib.gridspec as gridspec
-from matplotlib.patches import FancyArrowPatch, FancyBboxPatch, Arc
-import seaborn as sns
+from matplotlib.patches import FancyBboxPatch
 import joblib, io, warnings, re
 warnings.filterwarnings('ignore')
 
@@ -20,7 +18,6 @@ from sklearn.metrics import (accuracy_score, f1_score, r2_score,
     silhouette_score, davies_bouldin_score)
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.decomposition import PCA, TruncatedSVD
-from sklearn.manifold import TSNE
 from sklearn.cluster import KMeans, AgglomerativeClustering, DBSCAN
 from sklearn.mixture import GaussianMixture
 from sklearn.ensemble import (RandomForestClassifier, RandomForestRegressor,
@@ -175,9 +172,8 @@ st.markdown("""
 # ── Session state ──────────────────────────────────────────────────────────
 DEFS={'step':0,'df':None,'df_clean':None,'target':None,'results':None,'best_model':None,
       'problem_type':None,'nlp_mode':False,'text_col':None,'text_cols_detected':[],
-      'df_proc':None,'scaler':None,'feat_cols':[],'X_train':None,'X_test':None,
-      'X_train_sc':None,'X_test_sc':None,'y_train':None,'y_test':None,
-      'le_target':None,'tfidf':None,'best_name':'','best_scaled':False,
+      'df_proc':None,'scaler':None,'feat_cols':[],'X_test':None,'X_test_sc':None,
+      'y_test':None,'le_target':None,'tfidf':None,'best_name':'','best_scaled':False,
       'metric_name':'Accuracy','sort_col':'Accuracy','cluster_results':[],'dr_results':[],
       'outlier_report':{},'tuning_results':{},'pdf_buf':None,'ai_report':'',
       'ts_results':{},'is_time_series':False,'date_col':None}
@@ -402,10 +398,13 @@ def get_biz(problem_type,best_name,best_score,target):
 # ══════════════════════════════════════════════════════════════════════════
 if step==0:
     st.markdown('<div class="card fadein"><div class="ctitle">⬡ Step 1 — Upload Dataset</div>',unsafe_allow_html=True)
-    uploaded=st.file_uploader("Upload CSV",type=["csv"],label_visibility="collapsed")
+    uploaded=st.file_uploader("Upload CSV (max 20k rows on Community Cloud)",type=["csv"],label_visibility="collapsed")
     if uploaded:
         df=pd.read_csv(uploaded)
-        st.session_state.df=df; st.session_state.df_clean=df.copy()
+        if len(df)>20000:
+            st.warning(f"⚠️ Large dataset ({len(df):,} rows) — sampling 20,000 rows to stay within Streamlit Community Cloud memory limits.")
+            df=df.sample(20000,random_state=42).reset_index(drop=True)
+        st.session_state.df=df; st.session_state.df_clean=None  # will set after clean step
 
         # Animated metric cards
         st.markdown(f"""<div class="mrow">
@@ -462,6 +461,7 @@ if step==0:
 # STEP 1 — CLEAN + OUTLIERS
 # ══════════════════════════════════════════════════════════════════════════
 elif step==1:
+    plt.close('all')
     df=st.session_state.df; target=st.session_state.target
     num_cols=df.select_dtypes(include=np.number).columns.tolist()
     feat_num=[c for c in num_cols if c!=target]
@@ -559,6 +559,7 @@ elif step==1:
 # STEP 2 — EDA + WORD CLOUD + TIME SERIES
 # ══════════════════════════════════════════════════════════════════════════
 elif step==2:
+    plt.close('all')
     df=st.session_state.df_clean; target=st.session_state.target
     is_ts=st.session_state.is_time_series; date_col=st.session_state.date_col
     num_cols=df.select_dtypes(include=np.number).columns.tolist()
@@ -627,18 +628,19 @@ elif step==2:
         fig2,ax2=make_fig(11,5)
         corr=df[num_cols].corr()
         mask=np.triu(np.ones_like(corr,dtype=bool))
+        corr_masked=corr.where(~mask)
         cmap_custom=mcolors.LinearSegmentedColormap.from_list('cc',['#ef4444','#0b0f1a','#00e5a0'])
-        sns.heatmap(corr,mask=mask,cmap=cmap_custom,vmin=-1,vmax=1,
-                    annot=len(num_cols)<=14,fmt='.2f',linewidths=.8,linecolor=BG,
-                    ax=ax2,annot_kws={'size':7,'color':'#d4d8f0'},
-                    cbar_kws={'shrink':.7,'aspect':25,'pad':0.02})
-        ax2.tick_params(colors='#6b7280',labelsize=7.5)
-        # Highlight strong correlations
-        for i in range(len(corr)):
-            for j in range(i):
-                if abs(corr.iloc[i,j])>0.7:
-                    ax2.add_patch(plt.Rectangle((j,i),.98,.98,fill=False,edgecolor='#fbbf24',lw=1.5,zorder=3))
-        ax2.set_facecolor(PANEL)
+        im=ax2.imshow(corr_masked,cmap=cmap_custom,vmin=-1,vmax=1,aspect='auto')
+        plt.colorbar(im,ax=ax2,shrink=.7)
+        if len(num_cols)<=14:
+            for i in range(len(num_cols)):
+                for j in range(len(num_cols)):
+                    if not mask[i,j]:
+                        ax2.text(j,i,f'{corr.iloc[i,j]:.2f}',ha='center',va='center',
+                                 fontsize=6.5,color='#d4d8f0')
+        ax2.set_xticks(range(len(num_cols))); ax2.set_xticklabels(num_cols,rotation=35,ha='right',fontsize=7,color='#6b7280')
+        ax2.set_yticks(range(len(num_cols))); ax2.set_yticklabels(num_cols,fontsize=7,color='#6b7280')
+        for sp in ax2.spines.values(): sp.set_color(GRID)
         plt.tight_layout(); st.pyplot(fig2); plt.close()
 
     # ── Feature distributions — violin + kde ─────────────────────────────
@@ -776,6 +778,7 @@ elif step==2:
 # STEP 3 — PREPROCESSING
 # ══════════════════════════════════════════════════════════════════════════
 elif step==3:
+    plt.close('all')
     df=st.session_state.df_clean; target=st.session_state.target
     txt_det=st.session_state.text_cols_detected
     st.markdown('<div class="card fadein"><div class="ctitle">⬡ Step 4 — Preprocessing</div>',unsafe_allow_html=True)
@@ -845,6 +848,7 @@ elif step==3:
 # STEP 4 — TRAIN
 # ══════════════════════════════════════════════════════════════════════════
 elif step==4:
+    plt.close('all')
     df_proc=st.session_state.df_proc; target=st.session_state.target
     problem_type=st.session_state.problem_type; is_ts=st.session_state.is_time_series
     st.markdown('<div class="card fadein"><div class="ctitle">⬡ Step 5 — Training All Models</div>',unsafe_allow_html=True)
@@ -857,43 +861,43 @@ elif step==4:
     if problem_type!='clustering':
         X_train,X_test,y_train,y_test=train_test_split(X,y,test_size=0.2,random_state=42)
         Xtr_sc=scaler.transform(X_train); Xte_sc=scaler.transform(X_test)
-        st.session_state.X_train=X_train; st.session_state.X_test=X_test
-        st.session_state.X_train_sc=Xtr_sc; st.session_state.X_test_sc=Xte_sc
-        st.session_state.y_train=y_train; st.session_state.y_test=y_test
+        # Only store test set (smaller) — X_train freed after training
+        st.session_state.X_test=X_test; st.session_state.X_test_sc=Xte_sc
+        st.session_state.y_test=y_test
 
     results=[]; tuning_results={}
     enable_tuning=st.toggle("🔧 Enable Hyperparameter Tuning (GridSearchCV)",value=True)
 
     if problem_type=='classification':
-        base_models={"Random Forest":(RandomForestClassifier(n_estimators=100,random_state=42),False),
-                     "Gradient Boosting":(GradientBoostingClassifier(random_state=42),False),
-                     "Logistic Regression":(LogisticRegression(max_iter=1000),True),
-                     "SVM":(SVC(probability=True),True),"KNN":(KNeighborsClassifier(),True),
-                     "Decision Tree":(DecisionTreeClassifier(random_state=42),False)}
+        base_models={"Random Forest":(RandomForestClassifier(n_estimators=50,random_state=42,max_depth=12),False),
+                     "Gradient Boosting":(GradientBoostingClassifier(n_estimators=50,random_state=42),False),
+                     "Logistic Regression":(LogisticRegression(max_iter=500),True),
+                     "KNN":(KNeighborsClassifier(),True),
+                     "Decision Tree":(DecisionTreeClassifier(random_state=42,max_depth=10),False)}
         boost_models={}
-        try: from xgboost import XGBClassifier; boost_models["XGBoost"]=(XGBClassifier(n_estimators=100,random_state=42,verbosity=0,eval_metric='logloss'),False)
+        try: from xgboost import XGBClassifier; boost_models["XGBoost"]=(XGBClassifier(n_estimators=50,random_state=42,verbosity=0,eval_metric='logloss'),False)
         except: pass
-        try: from lightgbm import LGBMClassifier; boost_models["LightGBM"]=(LGBMClassifier(n_estimators=100,random_state=42,verbose=-1),False)
+        try: from lightgbm import LGBMClassifier; boost_models["LightGBM"]=(LGBMClassifier(n_estimators=50,random_state=42,verbose=-1),False)
         except: pass
-        try: from catboost import CatBoostClassifier; boost_models["CatBoost"]=(CatBoostClassifier(iterations=100,random_seed=42,verbose=0),False)
+        try: from catboost import CatBoostClassifier; boost_models["CatBoost"]=(CatBoostClassifier(iterations=50,random_seed=42,verbose=0),False)
         except: pass
         ml_models={**base_models,**boost_models}
         param_grids={"Random Forest":{'n_estimators':[50,100],'max_depth':[None,10]},
                      "Logistic Regression":{'C':[0.1,1,10]}}
         metric_name="Accuracy"; sort_col="Accuracy"
     elif problem_type=='regression':
-        base_models={"Random Forest":(RandomForestRegressor(n_estimators=100,random_state=42),False),
-                     "Gradient Boosting":(GradientBoostingRegressor(random_state=42),False),
+        base_models={"Random Forest":(RandomForestRegressor(n_estimators=50,random_state=42,max_depth=12),False),
+                     "Gradient Boosting":(GradientBoostingRegressor(n_estimators=50,random_state=42),False),
                      "Linear Regression":(LinearRegression(),True),
-                     "Ridge":(Ridge(),True),"SVR":(SVR(),True),
+                     "Ridge":(Ridge(),True),
                      "KNN":(KNeighborsRegressor(),True),
-                     "Decision Tree":(DecisionTreeRegressor(random_state=42),False)}
+                     "Decision Tree":(DecisionTreeRegressor(random_state=42,max_depth=10),False)}
         boost_models={}
-        try: from xgboost import XGBRegressor; boost_models["XGBoost"]=(XGBRegressor(n_estimators=100,random_state=42,verbosity=0),False)
+        try: from xgboost import XGBRegressor; boost_models["XGBoost"]=(XGBRegressor(n_estimators=50,random_state=42,verbosity=0),False)
         except: pass
-        try: from lightgbm import LGBMRegressor; boost_models["LightGBM"]=(LGBMRegressor(n_estimators=100,random_state=42,verbose=-1),False)
+        try: from lightgbm import LGBMRegressor; boost_models["LightGBM"]=(LGBMRegressor(n_estimators=50,random_state=42,verbose=-1),False)
         except: pass
-        try: from catboost import CatBoostRegressor; boost_models["CatBoost"]=(CatBoostRegressor(iterations=100,random_seed=42,verbose=0),False)
+        try: from catboost import CatBoostRegressor; boost_models["CatBoost"]=(CatBoostRegressor(iterations=50,random_seed=42,verbose=0),False)
         except: pass
         ml_models={**base_models,**boost_models}
         param_grids={"Random Forest":{'n_estimators':[50,100],'max_depth':[None,10]},
@@ -955,38 +959,46 @@ elif step==4:
 
     # Clustering
     n_cl=min(5,max(2,len(X_sc)//50)); cluster_results=[]
-    for cname,cmodel in [("K-Means",KMeans(n_clusters=n_cl,random_state=42,n_init=10)),
-                          ("Agglomerative",AgglomerativeClustering(n_clusters=n_cl)),
+    # Cap data for clustering/DR to save memory
+    MAX_CLUSTER=min(2000,len(X_sc))
+    idx_cl=np.random.choice(len(X_sc),MAX_CLUSTER,replace=False) if len(X_sc)>MAX_CLUSTER else np.arange(len(X_sc))
+    X_cl=X_sc[idx_cl]
+
+    for cname,cmodel in [("K-Means",KMeans(n_clusters=n_cl,random_state=42,n_init=5)),
                           ("Gaussian Mixture",GaussianMixture(n_components=n_cl,random_state=42)),
                           ("DBSCAN",DBSCAN(eps=0.5,min_samples=5))]:
         try:
-            lbl=cmodel.fit_predict(X_sc); n_u=len(set(lbl)-{-1})
-            sil=round(silhouette_score(X_sc,lbl),4) if n_u>=2 else -1
-            db=round(davies_bouldin_score(X_sc,lbl),4) if n_u>=2 else 999
-            cluster_results.append({'Model':cname,'Silhouette':sil,'DB Index':db,'Clusters':n_u,'_labels':lbl})
+            lbl=cmodel.fit_predict(X_cl); n_u=len(set(lbl)-{-1})
+            sil=round(silhouette_score(X_cl,lbl),4) if n_u>=2 else -1
+            db=round(davies_bouldin_score(X_cl,lbl),4) if n_u>=2 else 999
+            # Only store labels if small enough
+            cluster_results.append({'Model':cname,'Silhouette':sil,'DB Index':db,'Clusters':n_u,
+                                     '_labels':lbl if len(lbl)<5000 else None})
         except: pass
         done+=1; progress.progress(done/total)
     st.session_state.cluster_results=cluster_results
 
-    # DR
-    dr_results=[]; n_comp=min(2,X_sc.shape[1],X_sc.shape[0])
+    # DR — only PCA (lightweight), skip t-SNE
+    dr_results=[]; n_comp=min(2,X_cl.shape[1],X_cl.shape[0])
     try:
-        pca2=PCA(n_components=n_comp); Xp=pca2.fit_transform(X_sc)
-        pf=PCA(n_components=min(20,X_sc.shape[1],X_sc.shape[0])); pf.fit(X_sc)
-        dr_results.append({'Method':'PCA','Var(2D)':round(sum(pf.explained_variance_ratio_[:2])*100,2),'_X2d':Xp,'_pca_full':pf})
+        pca2=PCA(n_components=n_comp); Xp=pca2.fit_transform(X_cl)
+        pf=PCA(n_components=min(20,X_cl.shape[1],X_cl.shape[0])); pf.fit(X_cl)
+        dr_results.append({'Method':'PCA','Var(2D)':round(sum(pf.explained_variance_ratio_[:2])*100,2),
+                           '_X2d':Xp,'_pca_full':pf})
     except: pass
     try:
-        svd=TruncatedSVD(n_components=n_comp,random_state=42); Xs2=svd.fit_transform(X_sc)
+        svd=TruncatedSVD(n_components=n_comp,random_state=42); Xs2=svd.fit_transform(X_cl)
         dr_results.append({'Method':'SVD','Var(2D)':round(sum(svd.explained_variance_ratio_)*100,2),'_X2d':Xs2})
-    except: pass
-    try:
-        sn=min(800,len(X_sc)); idx=np.random.choice(len(X_sc),sn,replace=False)
-        tsne=TSNE(n_components=2,random_state=42,perplexity=min(30,sn-1),n_iter=300)
-        Xt=tsne.fit_transform(X_sc[idx])
-        dr_results.append({'Method':'t-SNE','Var(2D)':'N/A','_X2d':Xt,'_idx':idx})
     except: pass
     st.session_state.dr_results=dr_results
     done=total; progress.progress(1.0); status.empty()
+    # Free large arrays and dataframes from memory
+    import gc
+    del X_sc, X_cl
+    # Drop processed df from session state - no longer needed after training
+    st.session_state.df_proc=None
+    st.session_state.df_clean=None
+    gc.collect()
 
     if problem_type!='clustering' and results:
         rdf=pd.DataFrame(results).sort_values(sort_col,ascending=False).reset_index(drop=True)
@@ -1006,6 +1018,7 @@ elif step==4:
 # STEP 5 — RESULTS (best visualisations)
 # ══════════════════════════════════════════════════════════════════════════
 elif step==5:
+    plt.close('all')
     results_df=st.session_state.results; cluster_res=st.session_state.cluster_results
     dr_res=st.session_state.dr_results; feat_cols=st.session_state.feat_cols
     sort_col=st.session_state.sort_col; metric_name=st.session_state.metric_name
@@ -1420,6 +1433,7 @@ elif step==5:
 # STEP 6 — NEURAL NETWORK VISUALIZER
 # ══════════════════════════════════════════════════════════════════════════
 elif step==6:
+    plt.close('all')
     feat_cols=st.session_state.feat_cols; problem_type=st.session_state.problem_type
     df_proc=st.session_state.df_proc; target=st.session_state.target
     st.markdown('<div class="card fadein"><div class="ctitle">⬡ Step 7 — Neural Network Architecture Visualizer</div>',unsafe_allow_html=True)
@@ -1547,6 +1561,7 @@ elif step==6:
 # STEP 7 — AI REPORT
 # ══════════════════════════════════════════════════════════════════════════
 elif step==7:
+    plt.close('all')
     results_df=st.session_state.results; cluster_res=st.session_state.cluster_results
     problem_type=st.session_state.problem_type; best_name=st.session_state.best_name
     sort_col=st.session_state.sort_col; tuning_results=st.session_state.tuning_results
@@ -1593,13 +1608,25 @@ Professional tone. Specific numbers. Prose paragraphs not bullet lists. Under 65
         with st.spinner("Claude is writing your report..."):
             try:
                 import requests
+                api_key=st.secrets.get("ANTHROPIC_API_KEY","")
+                if not api_key:
+                    raise ValueError("No API key")
                 resp=requests.post("https://api.anthropic.com/v1/messages",
-                    headers={"Content-Type":"application/json"},
-                    json={"model":"claude-sonnet-4-20250514","max_tokens":1400,
-                          "messages":[{"role":"user","content":prompt}]})
+                    headers={
+                        "Content-Type":"application/json",
+                        "x-api-key": api_key,
+                        "anthropic-version": "2023-06-01"
+                    },
+                    json={"model":"claude-sonnet-4-5-20251001","max_tokens":1400,
+                          "messages":[{"role":"user","content":prompt}]},
+                    timeout=30)
                 data=resp.json()
-                ai_text=data['content'][0]['text'] if data.get('content') else "API unavailable."
-            except:
+                if data.get('content'):
+                    ai_text=data['content'][0]['text']
+                else:
+                    raise ValueError(data.get('error',{}).get('message','No content'))
+            except Exception as api_err:
+                st.warning(f"⚠️ AI API unavailable ({api_err}) — showing auto-generated report. To enable Claude AI reports, add `ANTHROPIC_API_KEY` to your Streamlit secrets (App settings → Secrets).")
                 score_word="excellent" if best_score>.9 else "strong" if best_score>.8 else "moderate" if best_score>.7 else "baseline"
                 ai_text=f"""## Executive Summary
 
@@ -1654,6 +1681,7 @@ Watch for overfitting if retraining on small data batches. Ensure production dat
 # STEP 8 — BUSINESS INSIGHTS
 # ══════════════════════════════════════════════════════════════════════════
 elif step==8:
+    plt.close('all')
     problem_type=st.session_state.problem_type; best_name=st.session_state.best_name
     sort_col=st.session_state.sort_col; results_df=st.session_state.results
     target=st.session_state.target; df=st.session_state.df
@@ -1717,6 +1745,7 @@ elif step==8:
 # STEP 9 — EXPORT
 # ══════════════════════════════════════════════════════════════════════════
 elif step==9:
+    plt.close('all')
     results_df=st.session_state.results; cluster_res=st.session_state.cluster_results
     best_model=st.session_state.best_model; best_name=st.session_state.best_name
     scaler=st.session_state.scaler; sort_col=st.session_state.sort_col
