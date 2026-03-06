@@ -853,6 +853,11 @@ elif step==4:
     problem_type=st.session_state.problem_type; is_ts=st.session_state.is_time_series
     st.markdown('<div class="card fadein"><div class="ctitle">⬡ Step 5 — Training All Models</div>',unsafe_allow_html=True)
 
+    if df_proc is None:
+        st.error("⚠️ Preprocessing data not found. Please go back to Step 4 (Preprocessing) and run it again.")
+        if st.button("← Back to Preprocessing"): nav(3)
+        st.stop()
+
     feat_cols=[c for c in df_proc.columns if c!=target]
     X=df_proc[feat_cols].values; y=df_proc[target].values if target else None
     scaler=StandardScaler(); X_sc=scaler.fit_transform(X)
@@ -992,11 +997,11 @@ elif step==4:
     except: pass
     st.session_state.dr_results=dr_results
     done=total; progress.progress(1.0); status.empty()
-    # Free large arrays and dataframes from memory
+    # Free large arrays from memory
     import gc
     del X_sc, X_cl
-    # Drop processed df from session state - no longer needed after training
-    st.session_state.df_proc=None
+    # Keep df_proc alive until results step reads feat_cols etc.
+    # Only clear df_clean (no longer needed)
     st.session_state.df_clean=None
     gc.collect()
 
@@ -1027,6 +1032,10 @@ elif step==5:
     scaler=st.session_state.scaler; df_proc=st.session_state.df_proc
     target=st.session_state.target; tuning_results=st.session_state.tuning_results
     ts_results=st.session_state.ts_results
+    # Free df_proc now — feat_cols already extracted above
+    if st.session_state.df_proc is not None:
+        st.session_state.df_proc=None
+        import gc; gc.collect()
     st.markdown('<div class="card fadein"><div class="ctitle">⬡ Step 6 — Results & Explainability</div>',unsafe_allow_html=True)
 
     best_score=results_df.iloc[0][sort_col] if results_df is not None and len(results_df) else 0
