@@ -355,7 +355,7 @@ def draw_confusion(ax, cm, class_names=None):
             clr='white' if cm[i,j]<cm.max()*0.55 else '#04060d'
             ax.text(j,i,f'{cm[i,j]}',ha='center',va='center',
                     fontsize=max(7,min(14,80//n)),fontweight='bold',color=clr)
-    if class_names:
+    if class_names is not None and len(class_names) > 0:
         ax.set_xticks(range(n)); ax.set_xticklabels(class_names,rotation=35,ha='right',fontsize=7,color='#6b7280')
         ax.set_yticks(range(n)); ax.set_yticklabels(class_names,fontsize=7,color='#6b7280')
     for sp in ax.spines.values(): sp.set_color(GRID)
@@ -1132,7 +1132,7 @@ elif step==5:
             c1,c2=st.columns([1.3,1])
             with c1:
                 with st.expander("🔲 Confusion Matrix",expanded=True):
-                    le_t=st.session_state.le_target; tn=le_t.classes_.astype(str)[:12] if le_t else None
+                    le_t=st.session_state.le_target; tn=list(le_t.classes_.astype(str)[:12]) if le_t else None
                     cm=confusion_matrix(y_test,yp)
                     fig_cm,ax_cm=make_fig(6,4.5)
                     draw_confusion(ax_cm,cm,tn)
