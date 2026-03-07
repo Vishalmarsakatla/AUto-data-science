@@ -916,6 +916,51 @@ elif step==3:
                 after=df_proc.shape[1]
                 st.success(f"✅ Auto FE: {after-before} new features created ({', '.join(afe_new_cols[:6])}{'...' if len(afe_new_cols)>6 else ''})")
 
+            # ── Auto Feature Selection — drop low-importance features ─────
+            dropped_cols=[]
+            if afe_on and afe_new_cols and target and problem_type in ('classification','regression'):
+                try:
+                    from sklearn.ensemble import RandomForestClassifier as RFC, RandomForestRegressor as RFR
+                    feat_sel_cols=[c for c in df_proc.columns if c!=target]
+                    Xfs=df_proc[feat_sel_cols].fillna(0).values
+                    yfs=df_proc[target].values
+                    rf_sel=RFC(n_estimators=30,random_state=42,max_depth=6) if problem_type=='classification' \
+                           else RFR(n_estimators=30,random_state=42,max_depth=6)
+                    rf_sel.fit(Xfs,yfs)
+                    importances=rf_sel.feature_importances_
+                    imp_df=pd.DataFrame({'feature':feat_sel_cols,'importance':importances}).sort_values('importance',ascending=False)
+                    # Drop features below threshold (mean × 0.1) but keep ALL original cols — only drop AFE-generated ones
+                    threshold=imp_df['importance'].mean()*0.1
+                    low_imp_afe=[r['feature'] for _,r in imp_df.iterrows()
+                                 if r['importance']<threshold and r['feature'] in afe_new_cols]
+                    if low_imp_afe:
+                        df_proc.drop(columns=low_imp_afe,inplace=True)
+                        dropped_cols=low_imp_afe
+                        kept=[c for c in afe_new_cols if c not in dropped_cols]
+                        st.info(f"🗑️ Feature Selection: dropped {len(dropped_cols)} low-importance AFE features "
+                                f"({', '.join(dropped_cols[:5])}{'...' if len(dropped_cols)>5 else ''}). "
+                                f"Kept {len(kept)} useful ones.")
+
+                        # Show top features chart
+                        top_n=min(15,len(imp_df))
+                        top_imp=imp_df[~imp_df['feature'].isin(dropped_cols)].head(top_n)
+                        fig_fs,ax_fs=make_fig(9,3.5)
+                        cmap_fs=mcolors.LinearSegmentedColormap.from_list('fi',[C2,C1])
+                        bar_cols_fs=[cmap_fs(i/max(1,top_n-1)) for i in range(len(top_imp))]
+                        bars=ax_fs.barh(range(len(top_imp)),top_imp['importance'].values,color=bar_cols_fs,zorder=3)
+                        ax_fs.set_yticks(range(len(top_imp)))
+                        ax_fs.set_yticklabels(top_imp['feature'].values,fontsize=7.5,color='#9ca3af')
+                        ax_fs.invert_yaxis()
+                        for bar,val in zip(bars,top_imp['importance'].values):
+                            ax_fs.text(val+0.001,bar.get_y()+bar.get_height()/2,
+                                      f'{val:.4f}',va='center',fontsize=7,color='#6b7280')
+                        polish(ax_fs,title=f'Top {top_n} Features After Selection',xlabel='Importance')
+                        plt.tight_layout(); st.pyplot(fig_fs); plt.close()
+                    else:
+                        st.success("✅ Feature Selection: all AFE features passed importance threshold — none dropped.")
+                except Exception as fs_err:
+                    st.warning(f"Feature selection skipped: {fs_err}")
+
             st.session_state.tfidf=tfidf; st.session_state.df_proc=df_proc
 
         # Preprocessing pipeline visual
@@ -924,6 +969,7 @@ elif step==3:
         if high_miss: steps_done.append(f'{len(high_miss)} cols dropped')
         if nlp_mode and text_col: steps_done.append(f'TF-IDF {len(tfidf_cols)} feats')
         if afe_on and afe_new_cols: steps_done.append(f'AFE +{len(afe_new_cols)} feats')
+        if dropped_cols: steps_done.append(f'Selection −{len(dropped_cols)} dropped')
 
         fig_pp,ax_pp=plt.subplots(figsize=(10,1.8),facecolor=BG); ax_pp.set_facecolor(BG); ax_pp.axis('off')
         n=len(steps_done); xs=np.linspace(.05,.95,n)
@@ -961,7 +1007,7 @@ elif step==4:
     st.markdown('<div class="card fadein"><div class="ctitle">⬡ Step 5 — Training All Models</div>',unsafe_allow_html=True)
 
     if df_proc is None:
-        st.error("⚠️ Preprocessing data not found. Please go back to Step 4 (Preprocessing) and run it again.")
+        st.error("⚠️ Preprocessing data not found. Please go back and re-run preprocessing.")
         if st.button("← Back to Preprocessing"): nav(3)
         st.stop()
 
@@ -972,29 +1018,45 @@ elif step==4:
 
     enable_tuning=st.toggle("🔧 Enable Hyperparameter Tuning (GridSearchCV)",value=True)
 
-    # If already trained, show results and nav buttons without re-training
-    already_trained = st.session_state.results is not None or st.session_state.cluster_results
+    # Check if already trained
+    already_trained=(st.session_state.results is not None or
+                     len(st.session_state.cluster_results)>0)
+
     if already_trained:
-        st.success(f"✅ Training complete! Best: **{st.session_state.best_name}** — {st.session_state.sort_col}: **{st.session_state.results.iloc[0][st.session_state.sort_col]:.4f}**" if st.session_state.results is not None else "✅ Clustering complete!")
+        # Show cached result — don't re-run training
+        if st.session_state.results is not None and len(st.session_state.results):
+            best_row=st.session_state.results.iloc[0]
+            sc=st.session_state.sort_col
+            st.success(f"✅ Training complete! Best: **{st.session_state.best_name}** — {sc}: **{best_row[sc]:.4f}**")
+        else:
+            st.success("✅ Clustering complete!")
         ca,cb,cc=st.columns(3)
         with ca:
             if st.button("← Back"): nav(3)
         with cb:
-            if st.button("🔄 Re-train"): 
-                st.session_state.results=None; st.session_state.cluster_results=[]; st.rerun()
+            if st.button("🔄 Re-train"):
+                st.session_state.results=None
+                st.session_state.cluster_results=[]
+                st.session_state.best_model=None
+                st.session_state.best_name=''
+                st.rerun()
         with cc:
             if st.button("View Results →"): nav(5)
         st.markdown('</div>',unsafe_allow_html=True)
         st.stop()
 
-    if not st.button("🚀 Start Training"):
-        ca,cb=st.columns(2)
-        with ca:
-            if st.button("← Back"): nav(3)
+    # Not yet trained — show Start Training button
+    col_btn1,col_btn2=st.columns(2)
+    with col_btn1:
+        go=st.button("🚀 Start Training",use_container_width=True)
+    with col_btn2:
+        if st.button("← Back",use_container_width=True): nav(3)
+
+    if not go:
         st.markdown('</div>',unsafe_allow_html=True)
         st.stop()
 
-    # ── Training runs only when button clicked ──────────────────────────
+    # ── Training runs only when Start Training clicked ───────────────────
     results=[]; tuning_results={}
 
     if problem_type!='clustering':
@@ -1140,14 +1202,10 @@ elif step==4:
         st.session_state.results=rdf; best=rdf.iloc[0]
         st.session_state.best_model=best['_model']; st.session_state.best_name=best['Model']
         st.session_state.best_scaled=best['_scaled']
-        st.success(f"✅ Best: **{best['Model']}** — {sort_col}: **{best[sort_col]:.4f}**")
 
-    ca,cb=st.columns(2)
-    with ca:
-        if st.button("← Back"): nav(3)
-    with cb:
-        if st.button("View Results →"): nav(5)
-    st.markdown('</div>',unsafe_allow_html=True)
+    # Auto-navigate to results — st.rerun needed so session_state is visible
+    st.session_state.step=5
+    st.rerun()
 
     # ══════════════════════════════════════════════════════════════════════════
 # STEP 5 — RESULTS (best visualisations)
@@ -1169,7 +1227,10 @@ elif step==5:
             import gc; gc.collect()
         st.markdown('<div class="card fadein"><div class="ctitle">⬡ Step 6 — Results & Explainability</div>',unsafe_allow_html=True)
 
-        if results_df is None: st.warning('No results yet — go back and train first.'); st.stop()
+        if results_df is None and len(cluster_res)==0:
+            st.warning('⚠️ No results yet — please go back and train first.')
+            if st.button("← Go to Training"): nav(4)
+            st.stop()
         best_score=results_df.iloc[0][sort_col] if len(results_df) else 0
         best_name=st.session_state.best_name or '—'
         n_boost=sum(1 for _,r in results_df.iterrows() if r.get('_boost')) if results_df is not None else 0
@@ -1768,7 +1829,7 @@ elif step==7:
     sort_col=st.session_state.sort_col; tuning_results=st.session_state.tuning_results
     feat_cols=st.session_state.feat_cols; target=st.session_state.target
     outlier_report=st.session_state.outlier_report; df=st.session_state.df
-    if results_df is None: st.warning('No results yet — go back and train first.'); st.stop()
+    if results_df is None and not st.session_state.cluster_results: st.warning('⚠️ No results — go back and train first.'); st.button('← Go to Training', on_click=nav, args=(4,)); st.stop()
     best_score=results_df.iloc[0][sort_col] if len(results_df) else 0
     st.markdown('<div class="card fadein"><div class="ctitle">⬡ Step 8 — AI Natural Language Report</div>',unsafe_allow_html=True)
 
@@ -1887,7 +1948,7 @@ elif step==8:
     problem_type=st.session_state.problem_type; best_name=st.session_state.best_name
     sort_col=st.session_state.sort_col; results_df=st.session_state.results
     target=st.session_state.target; df=st.session_state.df
-    if results_df is None: st.warning('No results yet — go back and train first.'); st.stop()
+    if results_df is None and not st.session_state.cluster_results: st.warning('⚠️ No results — go back and train first.'); st.button('← Go to Training', on_click=nav, args=(4,)); st.stop()
     best_score=results_df.iloc[0][sort_col] if len(results_df) else 0
     st.markdown('<div class="card fadein"><div class="ctitle">⬡ Step 9 — Business Use Cases & Deployment</div>',unsafe_allow_html=True)
 
@@ -1955,7 +2016,7 @@ elif step==9:
     problem_type=st.session_state.problem_type; target=st.session_state.target
     tuning_results=st.session_state.tuning_results; outlier_report=st.session_state.outlier_report
     ai_report=st.session_state.ai_report; df=st.session_state.df
-    if results_df is None: st.warning('No results yet — go back and train first.'); st.stop()
+    if results_df is None and not st.session_state.cluster_results: st.warning('⚠️ No results — go back and train first.'); st.button('← Go to Training', on_click=nav, args=(4,)); st.stop()
     best_score=results_df.iloc[0][sort_col] if len(results_df) else 0
     st.markdown('<div class="card fadein"><div class="ctitle">⬡ Step 10 — Export & Download</div>',unsafe_allow_html=True)
 
