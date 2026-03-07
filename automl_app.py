@@ -965,21 +965,43 @@ elif step==4:
         if st.button("← Back to Preprocessing"): nav(3)
         st.stop()
 
-    if df_proc is None: st.error('⚠️ Go back to Preprocessing and re-run it.'); st.stop()
     feat_cols=[c for c in df_proc.columns if c!=target]
     X=df_proc[feat_cols].values; y=df_proc[target].values if target else None
     scaler=StandardScaler(); X_sc=scaler.fit_transform(X)
     st.session_state.scaler=scaler; st.session_state.feat_cols=feat_cols
 
+    enable_tuning=st.toggle("🔧 Enable Hyperparameter Tuning (GridSearchCV)",value=True)
+
+    # If already trained, show results and nav buttons without re-training
+    already_trained = st.session_state.results is not None or st.session_state.cluster_results
+    if already_trained:
+        st.success(f"✅ Training complete! Best: **{st.session_state.best_name}** — {st.session_state.sort_col}: **{st.session_state.results.iloc[0][st.session_state.sort_col]:.4f}**" if st.session_state.results is not None else "✅ Clustering complete!")
+        ca,cb,cc=st.columns(3)
+        with ca:
+            if st.button("← Back"): nav(3)
+        with cb:
+            if st.button("🔄 Re-train"): 
+                st.session_state.results=None; st.session_state.cluster_results=[]; st.rerun()
+        with cc:
+            if st.button("View Results →"): nav(5)
+        st.markdown('</div>',unsafe_allow_html=True)
+        st.stop()
+
+    if not st.button("🚀 Start Training"):
+        ca,cb=st.columns(2)
+        with ca:
+            if st.button("← Back"): nav(3)
+        st.markdown('</div>',unsafe_allow_html=True)
+        st.stop()
+
+    # ── Training runs only when button clicked ──────────────────────────
+    results=[]; tuning_results={}
+
     if problem_type!='clustering':
         X_train,X_test,y_train,y_test=train_test_split(X,y,test_size=0.2,random_state=42)
         Xtr_sc=scaler.transform(X_train); Xte_sc=scaler.transform(X_test)
-        # Only store test set (smaller) — X_train freed after training
         st.session_state.X_test=X_test; st.session_state.X_test_sc=Xte_sc
         st.session_state.y_test=y_test
-
-    results=[]; tuning_results={}
-    enable_tuning=st.toggle("🔧 Enable Hyperparameter Tuning (GridSearchCV)",value=True)
 
     if problem_type=='classification':
         base_models={"Random Forest":(RandomForestClassifier(n_estimators=50,random_state=42,max_depth=12),False),
