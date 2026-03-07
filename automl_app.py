@@ -680,15 +680,27 @@ elif step==2:
             axes3=np.array(axes3).flatten()
             for i,col in enumerate(plot_cols):
                 ax3=axes3[i]; data=df[col].dropna(); color=PAL[i%len(PAL)]
-                # Violin + box
-                parts=ax3.violinplot(data,positions=[0],showmeans=False,showmedians=False)
-                for pc in parts['bodies']:
-                    pc.set_facecolor(color); pc.set_alpha(.25); pc.set_edgecolor(color); pc.set_linewidth(1.2)
-                for k in ['cbars','cmaxes','cmins']: parts[k].set_color(GRID)
-                ax3.boxplot(data,positions=[0],patch_artist=True,widths=0.13,
-                    boxprops=dict(facecolor=(1,1,1,.08),color=color,linewidth=1.5),
-                    medianprops=dict(color='white',lw=2.5),whiskerprops=dict(color='#374151',lw=1),
-                    capprops=dict(color='#374151',lw=1),showfliers=False)
+                # Skip if not enough data for violin
+                if len(data) < 3 or data.nunique() < 2:
+                    ax3.text(0.5,0.5,f'{col}\n(insufficient data)',ha='center',va='center',
+                             color='#4b5563',fontsize=8,transform=ax3.transAxes)
+                    ax3.set_facecolor(PANEL); polish(ax3,title=col)
+                    continue
+                try:
+                    # Violin + box
+                    parts=ax3.violinplot(data,positions=[0],showmeans=False,showmedians=False)
+                    for pc in parts['bodies']:
+                        pc.set_facecolor(color); pc.set_alpha(.25); pc.set_edgecolor(color); pc.set_linewidth(1.2)
+                    for k in ['cbars','cmaxes','cmins']: parts[k].set_color(GRID)
+                except Exception:
+                    pass
+                try:
+                    ax3.boxplot(data,positions=[0],patch_artist=True,widths=0.13,
+                        boxprops=dict(facecolor=(1,1,1,.08),color=color,linewidth=1.5),
+                        medianprops=dict(color='white',lw=2.5),whiskerprops=dict(color='#374151',lw=1),
+                        capprops=dict(color='#374151',lw=1),showfliers=False)
+                except Exception:
+                    pass
                 # Mean dot with glow
                 mn=data.mean()
                 for si,a in [(120,.04),(60,.1),(20,.5)]:
