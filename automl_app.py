@@ -1290,7 +1290,7 @@ elif step==5:
             plt.tight_layout(); st.pyplot(fig_cmp); plt.close()
 
             # ── Radar chart comparing top models ──────────────────────────────
-            if len(results_df)>=3 and problem_type in ['classification','regression']:
+            if results_df is not None and len(results_df)>=3 and problem_type in ['classification','regression']:
                 st.markdown('<div class="sh">🕸 Multi-Model Radar Comparison (Top 4)</div>',unsafe_allow_html=True)
                 metric_cols=[c for c in results_df.columns if not c.startswith('_') and c not in ['Model','Tuned','Boost']]
                 numeric_metrics=[c for c in metric_cols if results_df[c].dtype in [np.float64,np.float32,float]]
@@ -1838,7 +1838,7 @@ elif step==7:
     feat_cols=st.session_state.feat_cols; target=st.session_state.target
     outlier_report=st.session_state.outlier_report; df=st.session_state.df
     if results_df is None and not st.session_state.cluster_results: st.warning('⚠️ No results — go back and train first.'); st.button('← Go to Training', on_click=nav, args=(4,)); st.stop()
-    best_score=results_df.iloc[0][sort_col] if len(results_df) else 0
+    best_score=results_df.iloc[0][sort_col] if results_df is not None and len(results_df) else 0
     st.markdown('<div class="card fadein"><div class="ctitle">⬡ Step 8 — AI Natural Language Report</div>',unsafe_allow_html=True)
 
     st.markdown("""<div style="background:rgba(168,85,247,.05);border:1px solid rgba(168,85,247,.18);border-radius:14px;padding:1.2rem;margin-bottom:1rem">
@@ -1957,7 +1957,7 @@ elif step==8:
     sort_col=st.session_state.sort_col; results_df=st.session_state.results
     target=st.session_state.target; df=st.session_state.df
     if results_df is None and not st.session_state.cluster_results: st.warning('⚠️ No results — go back and train first.'); st.button('← Go to Training', on_click=nav, args=(4,)); st.stop()
-    best_score=results_df.iloc[0][sort_col] if len(results_df) else 0
+    best_score=results_df.iloc[0][sort_col] if results_df is not None and len(results_df) else 0
     st.markdown('<div class="card fadein"><div class="ctitle">⬡ Step 9 — Business Use Cases & Deployment</div>',unsafe_allow_html=True)
 
     st.markdown(f"""<div class="ibox"><div class="ititle">✦ Your Model at a Glance</div>
@@ -2025,7 +2025,7 @@ elif step==9:
     tuning_results=st.session_state.tuning_results; outlier_report=st.session_state.outlier_report
     ai_report=st.session_state.ai_report; df=st.session_state.df
     if results_df is None and not st.session_state.cluster_results: st.warning('⚠️ No results — go back and train first.'); st.button('← Go to Training', on_click=nav, args=(4,)); st.stop()
-    best_score=results_df.iloc[0][sort_col] if len(results_df) else 0
+    best_score=results_df.iloc[0][sort_col] if results_df is not None and len(results_df) else 0
     st.markdown('<div class="card fadein"><div class="ctitle">⬡ Step 10 — Export & Download</div>',unsafe_allow_html=True)
 
     st.markdown(f"""<div style="text-align:center;padding:1.5rem 0">
