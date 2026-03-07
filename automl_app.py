@@ -192,6 +192,81 @@ st.markdown(ph,unsafe_allow_html=True)
 
 def nav(s): st.session_state.step=s; st.rerun()
 
+# ══════════════════════════════════════════════════════════════════════════
+# AUTO DEBUG — Claude-powered error repair
+# ══════════════════════════════════════════════════════════════════════════
+if 'debug_log' not in st.session_state: st.session_state.debug_log=[]
+if 'debug_open' not in st.session_state: st.session_state.debug_open=False
+
+def auto_debug(error_msg, traceback_str, context_code=""):
+    """Send error to Claude API and return suggested fix."""
+    api_key=st.secrets.get("ANTHROPIC_API_KEY","")
+    if not api_key: return None
+    prompt=f"""You are an expert Python/Streamlit debugger. 
+A Streamlit app got this error:
+
+ERROR: {error_msg}
+
+TRACEBACK:
+{traceback_str[:2000]}
+
+CONTEXT CODE (nearby lines):
+{context_code[:1500]}
+
+Provide:
+1. Root cause (1 sentence)
+2. Exact fix (code snippet, concise)
+3. Prevention tip (1 sentence)
+
+Be concise. Format with headers: **Root Cause:**, **Fix:**, **Prevention:**"""
+    try:
+        import requests
+        r=requests.post("https://api.anthropic.com/v1/messages",
+            headers={"x-api-key":api_key,"anthropic-version":"2023-06-01","content-type":"application/json"},
+            json={"model":"claude-sonnet-4-5-20251001","max_tokens":600,
+                  "messages":[{"role":"user","content":prompt}]},timeout=25)
+        data=r.json()
+        return data.get('content',[{}])[0].get('text','No response')
+    except Exception as e:
+        return f"Auto-debug unavailable: {e}"
+
+def report_error(label, exc, tb_str):
+    """Log error and trigger auto-debug."""
+    import datetime
+    entry={'time':datetime.datetime.now().strftime('%H:%M:%S'),
+           'step':f"Step {st.session_state.step+1}",
+           'label':label,'error':str(exc),'traceback':tb_str,'fix':None}
+    # Get fix from Claude
+    fix=auto_debug(str(exc), tb_str)
+    entry['fix']=fix
+    st.session_state.debug_log.insert(0,entry)
+    if len(st.session_state.debug_log)>10: st.session_state.debug_log=st.session_state.debug_log[:10]
+
+# Auto Debug sidebar panel
+with st.sidebar:
+    st.markdown(f"""<div style="font-family:Space Mono,monospace;font-size:.7rem;
+        color:#00e5a0;letter-spacing:.08em;margin-bottom:.5rem">⚡ AUTO DEBUG</div>""",unsafe_allow_html=True)
+    n_errors=len(st.session_state.debug_log)
+    if n_errors==0:
+        st.markdown('<div style="font-size:.75rem;color:#374151">✅ No errors logged</div>',unsafe_allow_html=True)
+    else:
+        st.markdown(f'<div style="font-size:.75rem;color:#ef4444">🔴 {n_errors} error(s) caught</div>',unsafe_allow_html=True)
+        for i,entry in enumerate(st.session_state.debug_log):
+            with st.expander(f"[{entry['time']}] {entry['step']} — {entry['error'][:40]}..."):
+                st.markdown(f"**🔴 Error:** `{entry['error']}`")
+                if entry['fix']:
+                    st.markdown("**🤖 Claude's Fix:**")
+                    st.markdown(entry['fix'])
+                else:
+                    st.info("Add ANTHROPIC_API_KEY to Streamlit Secrets for AI-powered fixes.")
+                with st.expander("📋 Full Traceback"):
+                    st.code(entry['traceback'],language='python')
+        if st.button("🗑️ Clear Debug Log",use_container_width=True):
+            st.session_state.debug_log=[]; st.rerun()
+    st.markdown("---")
+    api_ok=bool(st.secrets.get("ANTHROPIC_API_KEY",""))
+    st.markdown(f'<div style="font-size:.7rem;color:{"#00e5a0" if api_ok else "#6b7280"}">{"🟢 AI Debug: ON" if api_ok else "⚪ AI Debug: OFF (add API key)"}</div>',unsafe_allow_html=True)
+
 def safe_chart(fn, *args, **kwargs):
     """Run a chart function, silently skip if it errors."""
     try:
@@ -209,6 +284,8 @@ def safe_section(label="section"):
     except Exception as e:
         st.warning(f"⚠️ {label} could not render: {e}")
         plt.close('all')
+
+
 
 # ══════════════════════════════════════════════════════════════════════════
 # VISUALISATION HELPERS
@@ -577,10 +654,12 @@ elif step==1:
         # ══════════════════════════════════════════════════════════════════════════
 
     except Exception as _e:
-        import traceback, gc; gc.collect(); plt.close('all')
-        st.error(f"⚠️ Step error — {_e}")
+        import traceback as _tb, gc; gc.collect(); plt.close('all')
+        _tbs=_tb.format_exc()
+        report_error("Step error",_e,_tbs)
+        st.error(f"⚠️ Step error — {_e}  *(logged to Auto Debug in sidebar ↙️)*")
         with st.expander("Show traceback"):
-            st.code(traceback.format_exc())
+            st.code(_tbs)
 
 # STEP 2 — EDA + WORD CLOUD + TIME SERIES
 # ══════════════════════════════════════════════════════════════════════════
@@ -816,10 +895,12 @@ elif step==2:
         # ══════════════════════════════════════════════════════════════════════════
 
     except Exception as _e:
-        import traceback, gc; gc.collect(); plt.close('all')
-        st.error(f"⚠️ Step error — {_e}")
+        import traceback as _tb, gc; gc.collect(); plt.close('all')
+        _tbs=_tb.format_exc()
+        report_error("Step error",_e,_tbs)
+        st.error(f"⚠️ Step error — {_e}  *(logged to Auto Debug in sidebar ↙️)*")
         with st.expander("Show traceback"):
-            st.code(traceback.format_exc())
+            st.code(_tbs)
 
 # STEP 3 — PREPROCESSING
 # ══════════════════════════════════════════════════════════════════════════
@@ -993,10 +1074,12 @@ elif step==3:
         # ══════════════════════════════════════════════════════════════════════════
 
     except Exception as _e:
-        import traceback, gc; gc.collect(); plt.close('all')
-        st.error(f"⚠️ Step error — {_e}")
+        import traceback as _tb, gc; gc.collect(); plt.close('all')
+        _tbs=_tb.format_exc()
+        report_error("Step error",_e,_tbs)
+        st.error(f"⚠️ Step error — {_e}  *(logged to Auto Debug in sidebar ↙️)*")
         with st.expander("Show traceback"):
-            st.code(traceback.format_exc())
+            st.code(_tbs)
 
 # STEP 4 — TRAIN
 # ══════════════════════════════════════════════════════════════════════════
@@ -1064,6 +1147,53 @@ elif step==4:
         Xtr_sc=scaler.transform(X_train); Xte_sc=scaler.transform(X_test)
         st.session_state.X_test=X_test; st.session_state.X_test_sc=Xte_sc
         st.session_state.y_test=y_test
+
+        # ── Train/Test Distribution ───────────────────────────────────────
+        n_train,n_test=len(X_train),len(X_test)
+        n_total=n_train+n_test
+        st.markdown('<div class="sh">📊 Train / Test Split Distribution</div>',unsafe_allow_html=True)
+        c1,c2,c3,c4=st.columns(4)
+        c1.metric("Total Samples",f"{n_total:,}")
+        c2.metric("Training Set",f"{n_train:,}",f"{n_train/n_total*100:.1f}%")
+        c3.metric("Test Set",f"{n_test:,}",f"{n_test/n_total*100:.1f}%")
+        c4.metric("Split Ratio","80 / 20")
+
+        # Visual bar
+        fig_sp,ax_sp=make_fig(8,1.4)
+        ax_sp.barh([0],[n_train/n_total],color=C1,height=0.5,label=f'Train ({n_train:,})',zorder=3)
+        ax_sp.barh([0],[n_test/n_total],left=[n_train/n_total],color=C2,height=0.5,label=f'Test ({n_test:,})',zorder=3)
+        ax_sp.set_xlim(0,1); ax_sp.set_yticks([]); ax_sp.set_xticks([0,.2,.4,.6,.8,1.0])
+        ax_sp.set_xticklabels(['0%','20%','40%','60%','80%','100%'],fontsize=8,color='#6b7280')
+        ax_sp.text(n_train/n_total/2,.0,f'Train\n{n_train/n_total*100:.1f}%',ha='center',va='center',
+                   fontsize=9,color='#04060d',fontweight='bold')
+        ax_sp.text(n_train/n_total+n_test/n_total/2,.0,f'Test\n{n_test/n_total*100:.1f}%',ha='center',va='center',
+                   fontsize=9,color='#04060d',fontweight='bold')
+        for sp in ax_sp.spines.values(): sp.set_visible(False)
+        ax_sp.set_facecolor(PANEL); fig_sp.patch.set_facecolor(BG)
+        ax_sp.tick_params(colors='#4b5563')
+        plt.tight_layout(); st.pyplot(fig_sp); plt.close()
+
+        # Class distribution for classification
+        if problem_type=='classification':
+            import pandas as pd
+            train_series=pd.Series(y_train); test_series=pd.Series(y_test)
+            train_counts=train_series.value_counts().sort_index()
+            test_counts=test_series.value_counts().sort_index()
+            le_t=st.session_state.le_target
+            labels=[str(le_t.inverse_transform([int(i)])[0]) if le_t else str(i) for i in train_counts.index]
+            fig_cd,ax_cd=make_fig(min(10,len(labels)*1.4+3),3.2)
+            x=np.arange(len(labels)); w=0.35
+            b1=ax_cd.bar(x-w/2,train_counts.values,width=w,color=C1,alpha=.85,label='Train',zorder=3)
+            b2=ax_cd.bar(x+w/2,test_counts.reindex(train_counts.index,fill_value=0).values,
+                         width=w,color=C2,alpha=.85,label='Test',zorder=3)
+            for bar in b1: ax_cd.text(bar.get_x()+bar.get_width()/2,bar.get_height()+.5,
+                                       f'{int(bar.get_height())}',ha='center',fontsize=7,color='#9ca3af')
+            for bar in b2: ax_cd.text(bar.get_x()+bar.get_width()/2,bar.get_height()+.5,
+                                       f'{int(bar.get_height())}',ha='center',fontsize=7,color='#9ca3af')
+            ax_cd.set_xticks(x); ax_cd.set_xticklabels(labels,rotation=30,ha='right',fontsize=8,color='#6b7280')
+            polish(ax_cd,title='Class Distribution — Train vs Test',legend=True)
+            plt.tight_layout(); st.pyplot(fig_cd); plt.close()
+        st.markdown('<div class="sep"></div>',unsafe_allow_html=True)
 
     if problem_type=='classification':
         base_models={"Random Forest":(RandomForestClassifier(n_estimators=50,random_state=42,max_depth=12),False),
@@ -1682,10 +1812,12 @@ elif step==5:
         # ══════════════════════════════════════════════════════════════════════════
 
     except Exception as _e:
-        import traceback, gc; gc.collect(); plt.close('all')
-        st.error(f"⚠️ Step error — {_e}")
+        import traceback as _tb, gc; gc.collect(); plt.close('all')
+        _tbs=_tb.format_exc()
+        report_error("Step error",_e,_tbs)
+        st.error(f"⚠️ Step error — {_e}  *(logged to Auto Debug in sidebar ↙️)*")
         with st.expander("Show traceback"):
-            st.code(traceback.format_exc())
+            st.code(_tbs)
 
 # STEP 6 — NEURAL NETWORK VISUALIZER
 # ══════════════════════════════════════════════════════════════════════════
@@ -1823,10 +1955,12 @@ elif step==6:
         # ══════════════════════════════════════════════════════════════════════════
 
     except Exception as _e:
-        import traceback, gc; gc.collect(); plt.close('all')
-        st.error(f"⚠️ Step error — {_e}")
+        import traceback as _tb, gc; gc.collect(); plt.close('all')
+        _tbs=_tb.format_exc()
+        report_error("Step error",_e,_tbs)
+        st.error(f"⚠️ Step error — {_e}  *(logged to Auto Debug in sidebar ↙️)*")
         with st.expander("Show traceback"):
-            st.code(traceback.format_exc())
+            st.code(_tbs)
 
 # STEP 7 — AI REPORT
 # ══════════════════════════════════════════════════════════════════════════
