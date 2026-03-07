@@ -1980,7 +1980,10 @@ elif step==9:
 
     st.markdown("<br>",unsafe_allow_html=True)
     if st.button("🔄 Start Over"):
-        for k in list(st.session_state.keys()): del st.session_state[k]; st.rerun()
+        for k in list(DEFS.keys()):
+            st.session_state[k] = DEFS[k]
+        st.session_state.step = 0
+        st.rerun()
     st.markdown('</div>',unsafe_allow_html=True)
 
     st.markdown("""<div style="text-align:center;margin-top:3rem;padding-top:1.4rem;
