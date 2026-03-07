@@ -826,6 +826,20 @@ elif step==3:
             if nlp_mode: text_col=st.selectbox("Text column",txt_det)
         st.session_state.nlp_mode=nlp_mode; st.session_state.text_col=text_col
 
+        # ── Auto Feature Engineering ──────────────────────────────────────
+        st.markdown('<div class="sep"></div>',unsafe_allow_html=True)
+        st.markdown('<div class="sh">⚙️ Auto Feature Engineering</div>',unsafe_allow_html=True)
+        st.markdown('<div style="font-size:.8rem;color:#6b7280;margin-bottom:.6rem">Automatically create new features from existing numeric columns to improve model performance.</div>',unsafe_allow_html=True)
+
+        afe_on=st.toggle("Enable Auto Feature Engineering",value=False)
+        afe_new_cols=[]
+        if afe_on:
+            col1,col2,col3,col4=st.columns(4)
+            with col1: do_poly=st.checkbox("Polynomial (degree 2)",value=True)
+            with col2: do_interact=st.checkbox("Interaction Terms",value=True)
+            with col3: do_log=st.checkbox("Log Transform",value=True)
+            with col4: do_bin=st.checkbox("Binning (quartiles)",value=False)
+
         with st.spinner("Preprocessing..."):
             df_proc=df.copy()
             date_col=st.session_state.date_col
@@ -852,6 +866,44 @@ elif step==3:
                 tm=tfidf.fit_transform(df_proc[text_col].fillna('').astype(str))
                 tdf=pd.DataFrame(tm.toarray(),columns=[f'tfidf_{w}' for w in tfidf.get_feature_names_out()],index=df_proc.index)
                 df_proc=pd.concat([df_proc.drop(columns=[text_col]),tdf],axis=1); tfidf_cols=list(tdf.columns)
+
+            # ── Apply Auto Feature Engineering ───────────────────────────
+            if afe_on and num_cols2:
+                top_num=num_cols2[:8]  # cap at 8 cols to avoid explosion
+                before=df_proc.shape[1]
+                # 1. Polynomial features (x², x³ omitted — just x²)
+                if do_poly:
+                    for c in top_num:
+                        try:
+                            df_proc[f'{c}²']=df_proc[c]**2
+                            afe_new_cols.append(f'{c}²')
+                        except: pass
+                # 2. Interaction terms (top pairs)
+                if do_interact:
+                    pairs=[(top_num[i],top_num[j]) for i in range(len(top_num)) for j in range(i+1,min(i+3,len(top_num)))]
+                    for a,b in pairs[:10]:
+                        try:
+                            df_proc[f'{a}×{b}']=df_proc[a]*df_proc[b]
+                            afe_new_cols.append(f'{a}×{b}')
+                        except: pass
+                # 3. Log transform (positive cols only)
+                if do_log:
+                    for c in top_num:
+                        try:
+                            if (df_proc[c]>0).all():
+                                df_proc[f'log_{c}']=np.log1p(df_proc[c])
+                                afe_new_cols.append(f'log_{c}')
+                        except: pass
+                # 4. Binning into quartiles
+                if do_bin:
+                    for c in top_num[:4]:
+                        try:
+                            df_proc[f'{c}_bin']=pd.qcut(df_proc[c],q=4,labels=False,duplicates='drop')
+                            afe_new_cols.append(f'{c}_bin')
+                        except: pass
+                after=df_proc.shape[1]
+                st.success(f"✅ Auto FE: {after-before} new features created ({', '.join(afe_new_cols[:6])}{'...' if len(afe_new_cols)>6 else ''})")
+
             st.session_state.tfidf=tfidf; st.session_state.df_proc=df_proc
 
         # Preprocessing pipeline visual
@@ -859,6 +911,7 @@ elif step==3:
                     'Missing imputed',f'{df_proc.shape[1]-(1 if target else 0)} features']
         if high_miss: steps_done.append(f'{len(high_miss)} cols dropped')
         if nlp_mode and text_col: steps_done.append(f'TF-IDF {len(tfidf_cols)} feats')
+        if afe_on and afe_new_cols: steps_done.append(f'AFE +{len(afe_new_cols)} feats')
 
         fig_pp,ax_pp=plt.subplots(figsize=(10,1.8),facecolor=BG); ax_pp.set_facecolor(BG); ax_pp.axis('off')
         n=len(steps_done); xs=np.linspace(.05,.95,n)
