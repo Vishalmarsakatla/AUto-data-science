@@ -1231,7 +1231,7 @@ elif step==5:
             st.warning('⚠️ No results yet — please go back and train first.')
             if st.button("← Go to Training"): nav(4)
             st.stop()
-        best_score=results_df.iloc[0][sort_col] if len(results_df) else 0
+        best_score=results_df.iloc[0][sort_col] if (results_df is not None and len(results_df)) else 0
         best_name=st.session_state.best_name or '—'
         n_boost=sum(1 for _,r in results_df.iterrows() if r.get('_boost')) if results_df is not None else 0
 
