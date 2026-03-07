@@ -1579,8 +1579,17 @@ elif step==5:
                 # Elbow chart
                 with st.expander("📐 K-Means Elbow Chart"):
                     try:
-                        # Use scaled test set as proxy for elbow chart
-                        Xa2=X_test_sc if X_test_sc is not None else X_test
+                        # Use test set if available, else use PCA 2D projection from DR
+                        Xa2=None
+                        if X_test_sc is not None and len(X_test_sc)>=4:
+                            Xa2=X_test_sc
+                        elif X_test is not None and len(X_test)>=4:
+                            Xa2=X_test
+                        else:
+                            # Fallback: use stored PCA X2d from DR results
+                            pca_for_elbow=[r for r in dr_res if r.get('Method')=='PCA' and '_X2d' in r]
+                            if pca_for_elbow:
+                                Xa2=pca_for_elbow[0]['_X2d']
                         if Xa2 is not None and len(Xa2)>=4:
                             inertias=[]; ks=range(2,min(11,len(Xa2)//2+2))
                             for k in ks:
@@ -1593,8 +1602,7 @@ elif step==5:
                             polish(ax_el,xlabel='K (number of clusters)',ylabel='Inertia',title='Elbow Chart — Choose Optimal K')
                             plt.tight_layout(); st.pyplot(fig_el); plt.close()
                         else:
-                            st.info("Elbow chart unavailable.")
-
+                            st.info("Elbow chart unavailable — not enough data points.")
                     except Exception as e:
                         st.warning(f"⚠️ Chart error: {e}")
         # ── Dimensionality reduction ──────────────────────────────────────────
